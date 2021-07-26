@@ -48,3 +48,22 @@ range of heights:
         --wallet "/path/to/arweave/wallet/file" \
         --from 0 \
         --to 100
+
+Once blocks are stored, they can also be read back out of Arweave, and
+passed onto the daemon.  This allows to sync a local blockchain node
+completely offline:
+
+    ./arblockstore.py read \
+        --blockchain Namecoin \
+        --rpc "http://user:password@localhost:8336/" \
+        --wallet "/path/to/arweave/wallet/file" \
+        --from 0 \
+        --to 100
+
+This will simply query for all transactions that claim to be ArBlockStore
+blocks in the given height range and for the given blockchain, and pass
+them onto the daemon in order.  The daemon does validation, so even if
+some garbage has been stored, it will just be filtered and work out
+in the end as long as all valid blocks are also present.
+To filter for blocks from a particular sender, the optional `--address`
+argument can be passed.

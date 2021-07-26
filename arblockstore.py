@@ -85,6 +85,69 @@ def performWrite (log, args, rpc):
     ids = newIds
 
 
+def performRead (log, args, rpc):
+  """
+  Performs the "read" action, reading blocks from Arweave and passing
+  them to the blockchain daemon.
+  """
+
+  wallet = loadWallet (log, args)
+
+  query = {
+    "op": "and",
+    "expr1": {
+      "op": "equals",
+      "expr1": "App-Name",
+      "expr2": APP_NAME,
+    },
+    "expr2": {
+      "op": "equals",
+      "expr1": "Blockchain",
+      "expr2": args.blockchain,
+    }
+  }
+
+  if args.address:
+    log.info (f"Filtering transactions from {args.address}")
+    query = {
+      "op": "and",
+      "expr1": {
+        "op": "equals",
+        "expr1": "from",
+        "expr2": args.address,
+      },
+      "expr2": query,
+    }
+
+  for h in range (args.fromHeight, args.toHeight + 1):
+    fullQuery = {
+      "op": "and",
+      "expr1": {
+        "op": "equals",
+        "expr1": "Block-Height",
+        "expr2": str (h),
+      },
+      "expr2": query,
+    }
+    txids = arweave.arql (wallet, fullQuery)
+
+    for i in txids:
+      tx = arweave.Transaction (wallet, id=i)
+      tx.get_transaction ()
+      tx.get_data ()
+
+      try:
+        rpc.submitblock (tx.data.hex ())
+      except Exception as exc:
+        log.error (exc)
+
+    if rpc.getblockcount () >= h:
+      log.info (f"Imported blocks at height {h}")
+    else:
+      log.error (f"Failed to find a block at height {h}")
+      return
+
+
 def setupLogging ():
   """
   Sets up the logging configuration we want to use on our logger
@@ -120,8 +183,10 @@ def parseArgs ():
                        help="Name used to identify the blockchain in tags")
   parser.add_argument ("--rpc", required=True,
                        help="JSON-RPC endpoint of the blockchain daemon")
-  parser.add_argument ("--wallet", default="",
-                       help="Arweave wallet file (required when writing)")
+  parser.add_argument ("--wallet", required=True,
+                       help="Arweave wallet file")
+  parser.add_argument ("--address", default=None,
+                       help="Filter for this address (when reading)")
   parser.add_argument ("--from", required=True, type=int, dest="fromHeight",
                        help="Starting block height")
   parser.add_argument ("--to", required=True, type=int, dest="toHeight",
@@ -134,7 +199,7 @@ def parseArgs ():
   if args.fromHeight < 0 or args.fromHeight > args.toHeight:
     valid = False
 
-  if args.action == "write" and not args.wallet:
+  if args.action == "write" and args.address:
     valid = False
 
   if not valid:
@@ -154,3 +219,5 @@ if __name__ == "__main__":
 
   if args.action == "write":
     performWrite (log, args, rpc)
+  elif args.action == "read":
+    performRead (log, args, rpc)
