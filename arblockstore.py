@@ -36,6 +36,99 @@ def loadWallet (log, args):
   return wallet
 
 
+class BlockWriter:
+  """
+  Helper class for the "write" operation.
+  """
+
+  def __init__ (self, log, rpc, wallet):
+    self.log = log
+    self.rpc = rpc
+    self.wallet = wallet
+
+    # Transactions and block heights (as pairs) that have been
+    # sent but are still pending.
+    self.pending = []
+
+  def generateTransactions (self, fromHeight, toHeight):
+    """
+    Generator that yields the transactions (not yet broadcast but
+    otherwise ready) for storing blocks in the given range.
+    """
+
+    for h in range (fromHeight, toHeight + 1):
+      blkHash = self.rpc.getblockhash (h)
+      hdr = self.rpc.getblockheader (blkHash)
+      blk = self.rpc.getblock (blkHash, 0)
+      blk = binascii.unhexlify (blk)
+
+      tx = arweave.Transaction (self.wallet, data=blk)
+      tx.add_tag ("App-Name", APP_NAME)
+      tx.add_tag ("App-Version", APP_VERSION)
+      tx.add_tag ("Blockchain", args.blockchain)
+      tx.add_tag ("Block-Height", str (h))
+      tx.add_tag ("Block-Hash", blkHash)
+      if h > 0:
+        tx.add_tag ("Previous-Hash", hdr["previousblockhash"])
+      tx.sign ()
+
+      yield tx, h
+
+  def checkPendings (self):
+    """
+    Queries for the status of each pending txid and removes those
+    that have been confirmed.
+    """
+
+    newPending = []
+    minHeight = None
+    maxHeight = None
+
+    for txid, h in self.pending:
+      tx = arweave.Transaction (self.wallet, id=txid)
+      tx.get_transaction ()
+
+      status = tx.get_status ()
+      if status == "PENDING":
+        newPending.append ((txid, h))
+        if minHeight is None or h < minHeight:
+          minHeight = h
+        if maxHeight is None or h > maxHeight:
+          maxHeight = h
+      else:
+        assert status["number_of_confirmations"] >= 1
+        self.log.info (f"Confirmed: {txid} for height {h}")
+
+    self.pending = newPending
+    cnt = len (self.pending)
+    if cnt > 0:
+      self.log.info (f"{cnt} tx pending, heights {minHeight} to {maxHeight}")
+
+  def writeRange (self, fromHeight, toHeight, queueSize):
+    """
+    Runs the write operation in a given height range and with a maximum
+    size of the pending queue (before new transactions are sent).
+    """
+
+    log.info (f"Writing blocks from height {fromHeight} to {toHeight}")
+
+    moreTx = True
+    generator = self.generateTransactions (fromHeight, toHeight)
+
+    while moreTx or self.pending:
+      while moreTx and len (self.pending) < queueSize:
+        try:
+          tx, h = next (generator)
+          tx.send ()
+          self.log.info (f"Height {h}: {tx.id}")
+          self.pending.append ((tx.id, h))
+        except StopIteration:
+          moreTx = False
+
+      time.sleep (60)
+      self.checkPendings ()
+
+
 def performWrite (log, args, rpc):
   """
   Performs the "write" action (reading blocks as per the arguments from
@@ -43,46 +136,8 @@ def performWrite (log, args, rpc):
   """
 
   wallet = loadWallet (log, args)
-
-  log.info (f"Writing blocks from height {args.fromHeight} to {args.toHeight}")
-
-  ids = []
-  for h in range (args.fromHeight, args.toHeight + 1):
-    blkHash = rpc.getblockhash (h)
-    hdr = rpc.getblockheader (blkHash)
-    blk = rpc.getblock (blkHash, 0)
-    blk = binascii.unhexlify (blk)
-
-    tx = arweave.Transaction (wallet, data=blk)
-    tx.add_tag ("App-Name", APP_NAME)
-    tx.add_tag ("App-Version", APP_VERSION)
-    tx.add_tag ("Blockchain", args.blockchain)
-    tx.add_tag ("Block-Height", str (h))
-    tx.add_tag ("Block-Hash", blkHash)
-    if h > 0:
-      tx.add_tag ("Previous-Hash", hdr["previousblockhash"])
-    tx.sign ()
-    tx.send ()
-
-    log.info (f"Height {h}: {tx.id}")
-    ids.append (tx.id)
-
-  while ids:
-    time.sleep (1)
-
-    newIds = []
-    for i in ids:
-      tx = arweave.Transaction (wallet, id=i)
-      tx.get_transaction ()
-
-      status = tx.get_status ()
-      if status == "PENDING":
-        newIds.append (i)
-      else:
-        assert status["number_of_confirmations"] >= 1
-        log.info (f"Confirmed: {i}")
-
-    ids = newIds
+  writer = BlockWriter (log, rpc, wallet)
+  writer.writeRange (args.fromHeight, args.toHeight, args.pending_queue)
 
 
 def performRead (log, args, rpc):
@@ -191,6 +246,8 @@ def parseArgs ():
                        help="Starting block height")
   parser.add_argument ("--to", required=True, type=int, dest="toHeight",
                        help="Ending block height")
+  parser.add_argument ("--pending_queue", default=100, type=int,
+                       help="Maximum number of pending transactions")
 
   args = parser.parse_args ()
 
