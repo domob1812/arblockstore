@@ -174,7 +174,11 @@ def performRead (log, args, rpc):
       "expr2": query,
     }
 
-  for h in range (args.fromHeight, args.toHeight + 1):
+  if args.fromHeight == -1:
+    args.fromHeight = rpc.getblockcount ()
+
+  h = args.fromHeight
+  while args.toHeight == -1 or h <= args.toHeight:
     fullQuery = {
       "op": "and",
       "expr1": {
@@ -201,6 +205,8 @@ def performRead (log, args, rpc):
     else:
       log.error (f"Failed to find a block at height {h}")
       return
+
+    h += 1
 
 
 def setupLogging ():
@@ -242,10 +248,10 @@ def parseArgs ():
                        help="Arweave wallet file")
   parser.add_argument ("--address", default=None,
                        help="Filter for this address (when reading)")
-  parser.add_argument ("--from", required=True, type=int, dest="fromHeight",
-                       help="Starting block height")
-  parser.add_argument ("--to", required=True, type=int, dest="toHeight",
-                       help="Ending block height")
+  parser.add_argument ("--from", default=-1, type=int, dest="fromHeight",
+                       help="Starting block height (defaults to current height when reading)")
+  parser.add_argument ("--to", default=-1, type=int, dest="toHeight",
+                       help="Ending block height (defaults to none when reading)")
   parser.add_argument ("--pending_queue", default=100, type=int,
                        help="Maximum number of pending transactions")
 
@@ -253,11 +259,16 @@ def parseArgs ():
 
   valid = True
 
-  if args.fromHeight < 0 or args.fromHeight > args.toHeight:
+  if args.fromHeight < -1:
+    valid = False
+  if args.toHeight != -1 and args.fromHeight > args.toHeight:
     valid = False
 
-  if args.action == "write" and args.address:
-    valid = False
+  if args.action == "write":
+    if args.address:
+      valid = False
+    if args.fromHeight == -1 or args.toHeight == -1:
+      valid = False
 
   if not valid:
     parser.print_help ()

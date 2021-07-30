@@ -56,14 +56,14 @@ completely offline:
     ./arblockstore.py read \
         --blockchain Namecoin \
         --rpc "http://user:password@localhost:8336/" \
-        --wallet "/path/to/arweave/wallet/file" \
-        --from 0 \
-        --to 100
+        --wallet "/path/to/arweave/wallet/file"
 
 This will simply query for all transactions that claim to be ArBlockStore
-blocks in the given height range and for the given blockchain, and pass
+blocks by increasing height and for the given blockchain, and pass
 them onto the daemon in order.  The daemon does validation, so even if
 some garbage has been stored, it will just be filtered and work out
 in the end as long as all valid blocks are also present.
 To filter for blocks from a particular sender, the optional `--address`
-argument can be passed.
+argument can be passed.  `--from` and `--to` can be explicitly specified
+as well if needed (but they default to starting from the node' best block
+and going until the process is cancelled).
