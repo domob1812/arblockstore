@@ -22,6 +22,11 @@ import jsonrpclib
 APP_NAME = "ArBlockStore"
 APP_VERSION = "1.0"
 
+# Number of confirmations we want for data we are reading.
+# This is mainly useful to check after writing some blocks.  Otherwise
+# it won't matter, as data will be long confirmed anyway.
+MIN_READ_CONFIRMATIONS = None
+
 
 def loadWallet (log, args):
   """
@@ -194,6 +199,13 @@ def performRead (log, args, rpc):
       tx = arweave.Transaction (wallet, id=i)
       tx.get_transaction ()
       tx.get_data ()
+
+      if MIN_READ_CONFIRMATIONS is not None:
+        status = tx.get_status ()
+        if status == "PENDING":
+          continue
+        if status["number_of_confirmations"] < MIN_READ_CONFIRMATIONS:
+          continue
 
       try:
         rpc.submitblock (tx.data.hex ())
