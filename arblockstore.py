@@ -196,9 +196,16 @@ def performRead (log, args, rpc):
     txids = arweave.arql (wallet, fullQuery)
 
     for i in txids:
-      tx = arweave.Transaction (wallet, id=i)
-      tx.get_transaction ()
-      tx.get_data ()
+      # It seems that sometimes there can be errors looking up
+      # the transactions we received.  Just try to handle them
+      # gracefully by ignoring.
+      try:
+        tx = arweave.Transaction (wallet, id=i)
+        tx.get_transaction ()
+        tx.get_data ()
+      except Exception as exc:
+        log.error (f"Error with {i}: {exc}")
+        continue
 
       if MIN_READ_CONFIRMATIONS is not None:
         status = tx.get_status ()
