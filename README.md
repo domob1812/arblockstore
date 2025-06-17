@@ -34,10 +34,8 @@ wallet as needed!
 
 ## Running
 
-The tool is very easy to run on the command-line.  It needs the following
-dependencies installed:
-
-    pip install arweave-python-client jsonrpclib-pelix
+The tool is very easy to run on the command-line.  It needs the Python
+packages from `requirements.txt` installed, e.g. in a virtual environment.
 
 Then it can be executed as follows to query for and archive blocks in a
 range of heights:
