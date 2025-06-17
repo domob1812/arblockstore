@@ -89,13 +89,14 @@ class BlockWriter:
     minHeight = None
     maxHeight = None
 
-    for txid, h in self.pending:
+    for txid, oldTx, h in self.pending:
       tx = arweave.Transaction (self.wallet, id=txid)
       tx.get_transaction ()
 
       status = tx.get_status ()
       if status == "PENDING":
-        newPending.append ((txid, h))
+        oldTx.send ()
+        newPending.append ((txid, oldTx, h))
         if minHeight is None or h < minHeight:
           minHeight = h
         if maxHeight is None or h > maxHeight:
@@ -126,7 +127,7 @@ class BlockWriter:
           tx, h = next (generator)
           tx.send ()
           self.log.info (f"Height {h}: {tx.id}")
-          self.pending.append ((tx.id, h))
+          self.pending.append ((tx.id, tx, h))
         except StopIteration:
           moreTx = False
 
