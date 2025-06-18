@@ -41,6 +41,61 @@ def loadWallet (log, args):
   return wallet
 
 
+class BlockReader:
+  """
+  Helper class to query for block data on ArWeave.
+  """
+
+  def __init__ (self, log, wallet, args):
+    self.log = log
+    self.wallet = wallet
+
+    self.baseQuery = {
+      "op": "and",
+      "expr1": {
+        "op": "equals",
+        "expr1": "App-Name",
+        "expr2": APP_NAME,
+      },
+      "expr2": {
+        "op": "equals",
+        "expr1": "Blockchain",
+        "expr2": args.blockchain,
+      }
+    }
+
+    if args.address:
+      log.info (f"Filtering transactions from {args.address}")
+      self.baseQuery = {
+        "op": "and",
+        "expr1": {
+          "op": "equals",
+          "expr1": "from",
+          "expr2": args.address,
+        },
+        "expr2": self.baseQuery,
+      }
+
+  def queryTxidsForBlock (self, h):
+    """
+    Queries for transactions with our filter and matching the
+    given block height.  Returns just the txids, does not fetch
+    the actual data for them yet.
+    """
+
+    query = {
+      "op": "and",
+      "expr1": {
+        "op": "equals",
+        "expr1": "Block-Height",
+        "expr2": str (h),
+      },
+      "expr2": self.baseQuery,
+    }
+
+    return arweave.arql (self.wallet, query)
+
+
 class BlockWriter:
   """
   Helper class for the "write" operation.
@@ -153,48 +208,14 @@ def performRead (log, args, rpc):
   """
 
   wallet = loadWallet (log, args)
-
-  query = {
-    "op": "and",
-    "expr1": {
-      "op": "equals",
-      "expr1": "App-Name",
-      "expr2": APP_NAME,
-    },
-    "expr2": {
-      "op": "equals",
-      "expr1": "Blockchain",
-      "expr2": args.blockchain,
-    }
-  }
-
-  if args.address:
-    log.info (f"Filtering transactions from {args.address}")
-    query = {
-      "op": "and",
-      "expr1": {
-        "op": "equals",
-        "expr1": "from",
-        "expr2": args.address,
-      },
-      "expr2": query,
-    }
+  reader = BlockReader (log, wallet, args)
 
   if args.fromHeight == -1:
     args.fromHeight = rpc.getblockcount ()
 
   h = args.fromHeight
   while args.toHeight == -1 or h <= args.toHeight:
-    fullQuery = {
-      "op": "and",
-      "expr1": {
-        "op": "equals",
-        "expr1": "Block-Height",
-        "expr2": str (h),
-      },
-      "expr2": query,
-    }
-    txids = arweave.arql (wallet, fullQuery)
+    txids = reader.queryTxidsForBlock (h)
 
     for i in txids:
       # It seems that sometimes there can be errors looking up
